@@ -1,31 +1,38 @@
-const Hapi = require('@hapi/hapi');
-const Boom = require('@hapi/boom');
-const tf = require('@tensorflow/tfjs-node');
-const { v4: uuidv4 } = require('uuid');
+const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
 const admin = require('firebase-admin');
+const {v4: uuidv4} = require('uuid');
+const tf = require('@tensorflow/tfjs-node');
+const Boom = require('@hapi/boom');
+const Hapi = require('@hapi/hapi');
 
-// Initialize Firebase Admin SDK
-const serviceAccount = require('./submissionmlgc-rifkimaulana-firebase-adminsdk-7czo4-dc02f38cd0.json'); // Replace with the path to your Firebase service account key
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: 'https://submissionmlgc-rifkimaulana.firebaseio.com' // Replace with your Firebase project URL
-});
+const client = new SecretManagerServiceClient();
 
-// Get Firestore database reference
-const db = admin.firestore();
+async function getFirebaseCredentials() {
+    const secretName = 'projects/submissionmlgc-rifkimaulana/secrets/firebase/versions/latest';
+    const [version] = await client.accessSecretVersion({name: secretName});
+    const firebaseJson = version.payload.data.toString('utf8');
+    return JSON.parse(firebaseJson); // Parse the JSON string into an object
+}
 
-const init = async () => {
+async function init() {
     const server = Hapi.server({
-    port: 3000,
-    host: '0.0.0.0',
-    routes: {
-        cors: {
-            origin: ['*'],
-            additionalHeaders: ['cache-control', 'x-requested-with']
+        port: 3000,
+        host: '0.0.0.0',
+        routes: {
+            cors: {
+                origin: ['*'], // Allow all origins
+                additionalHeaders: ['cache-control', 'x-requested-with']
+            }
         }
-    }
-});
+    });
 
+    const serviceAccount = await getFirebaseCredentials();
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        databaseURL: 'https://submissionmlgc-rifkimaulana.firebaseio.com'
+    });
+
+    const db = admin.firestore();
     const modelUrl = 'https://storage.googleapis.com/rifki-bucket-model/model.json';
     let model;
 
@@ -63,7 +70,6 @@ const init = async () => {
                 const prediction = model.predict(tensor).arraySync();
                 const classification = prediction[0] > 0.58 ? 'Cancer' : 'Non-cancer';
 
-                // Create a new prediction document in Firestore
                 const predictionId = uuidv4();
                 const predictionDoc = {
                     id: predictionId,
@@ -74,7 +80,6 @@ const init = async () => {
                     createdAt: new Date().toISOString(),
                 };
 
-                // Save the prediction to Firestore
                 await db.collection('predictions').doc(predictionId).set(predictionDoc);
 
                 return h.response({
@@ -88,21 +93,9 @@ const init = async () => {
         },
     });
 
-    server.ext('onPreResponse', (request, h) => {
-        const response = request.response;
-        if (response.isBoom) {
-            const statusCode = response.output.statusCode;
-            const message = statusCode === 413
-                ? 'Payload content length greater than maximum allowed: 1000000'
-                : 'Terjadi kesalahan dalam melakukan prediksi';
-            return h.response({status: 'fail', message}).code(statusCode);
-        }
-        return h.continue;
-    });
-
     await server.start();
     console.log('Server running on %s', server.info.uri);
-};
+}
 
 process.on('unhandledRejection', (err) => {
     console.error(err);
