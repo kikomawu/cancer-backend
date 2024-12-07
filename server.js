@@ -50,16 +50,36 @@ async function init() {
         path: '/predict',
         options: {
             payload: {
-                maxBytes: 1000000,
                 output: 'stream',
                 parse: true,
                 multipart: true,
                 allow: 'multipart/form-data',
+                maxBytes: Number.MAX_SAFE_INTEGER,
             },
         },
         handler: async (request, h) => {
-            const {image} = request.payload;
-            if (!image || !image._data) throw Boom.badRequest('File is required');
+            const { image } = request.payload;
+            if (!image || !image._data) {
+                return h.response({
+                    status: 'fail',
+                    message: 'File is required',
+                }).code(400);
+            }
+
+            if (image._data.length > 1000000) {
+                return h.response({
+                    status: 'fail',
+                    message: 'Payload content length greater than maximum allowed: 1000000',
+                }).code(413);
+            }
+
+            const filename = image.hapi.filename.toLowerCase();
+            if (!filename.endsWith('.png')) {
+                return h.response({
+                    status: 'fail',
+                    message: 'Terjadi kesalahan dalam melakukan prediksi',
+                }).code(400);
+            }
 
             try {
                 const tensor = tf.node.decodeImage(image._data, 3)
@@ -86,9 +106,13 @@ async function init() {
                     status: 'success',
                     message: 'Model is predicted successfully',
                     data: predictionDoc,
-                }).code(200);
-            } catch {
-                throw Boom.badRequest('Terjadi kesalahan dalam melakukan prediksi');
+                }).code(201);
+            } catch (error) {
+                console.error(error);
+                return h.response({
+                    status: 'fail',
+                    message: 'Terjadi kesalahan dalam melakukan prediksi',
+                }).code(400);
             }
         },
     });
