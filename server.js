@@ -1,10 +1,20 @@
 const Hapi = require('@hapi/hapi');
 const Boom = require('@hapi/boom');
 const tf = require('@tensorflow/tfjs-node');
-const { v4: uuidv4 } = require('uuid');
+const {v4: uuidv4} = require('uuid');
 
 const init = async () => {
-    const server = Hapi.server({ port: 3000, host: 'localhost' });
+    const server = Hapi.server({
+        port: 3000,
+        host: 'localhost',
+        routes: {
+            cors: {
+                origin: ["Access-Control-Allow-Origin", "http://localhost:8080"],
+                headers: ["Accept", "Content-Type"],
+                additionalHeaders: ["X-Requested-With"]
+            }
+        }
+    });
 
     const modelUrl = 'https://storage.googleapis.com/rifki-bucket-model/model.json';
     let model;
@@ -31,11 +41,11 @@ const init = async () => {
             },
         },
         handler: async (request, h) => {
-            const { file } = request.payload;
-            if (!file || !file._data) throw Boom.badRequest('File is required');
+            const {image} = request.payload;
+            if (!image || !image._data) throw Boom.badRequest('File is required');
 
             try {
-                const tensor = tf.node.decodeImage(file._data, 3)
+                const tensor = tf.node.decodeImage(image._data, 3)
                     .resizeBilinear([224, 224])
                     .expandDims(0)
                     .div(255.0);
@@ -68,7 +78,7 @@ const init = async () => {
             const message = statusCode === 413
                 ? 'Payload content length greater than maximum allowed: 1000000'
                 : 'Terjadi kesalahan dalam melakukan prediksi';
-            return h.response({ status: 'fail', message }).code(statusCode);
+            return h.response({status: 'fail', message}).code(statusCode);
         }
         return h.continue;
     });
