@@ -17,14 +17,7 @@ const db = admin.firestore();
 const init = async () => {
     const server = Hapi.server({
         port: 3000,
-        host: 'localhost',
-        routes: {
-            cors: {
-                origin: ["Access-Control-Allow-Origin", "http://localhost:8080"],
-                headers: ["Accept", "Content-Type"],
-                additionalHeaders: ["X-Requested-With"]
-            }
-        }
+        host: '0.0.0.0',
     });
 
     const modelUrl = 'https://storage.googleapis.com/rifki-bucket-model/model.json';
